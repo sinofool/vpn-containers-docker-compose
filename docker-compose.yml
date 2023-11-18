@@ -1,0 +1,141 @@
+version: "3.8"
+services:
+  deunhealth:
+    image: qmcgaw/deunhealth
+    network_mode: none
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  vpn-server-selector:
+    build: ./spec/vpn-server-selector
+    container_name: vpn-server-selector
+    restart: unless-stopped
+    volumes:
+      - ./config:/config
+
+  nordvpn-official-client:
+    build: ./spec/nordvpn
+    container_name: nordvpn
+    labels:
+      deunhealth.restart.on.unhealthy: true
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    ports:
+      - 8080:8080
+    environment:
+      - AUTH_TOKEN=<YOUR_TOKEN>
+      - WHITELIST_SUBNETS=192.168.0.0/24
+      - WHITELIST_PORTS=8080
+    command: /connect.sh us
+    healthcheck:
+      test: /healthcheck.sh
+      interval: 15s
+      timeout: 10s
+      retries: 1
+      start_period: 15s
+      start_interval: 15s
+    volumes:
+      - /lib/modules:/lib/modules:ro
+
+  nordvpn:
+    image: qmcgaw/gluetun
+    container_name: nordvpn
+    labels:
+      deunhealth.restart.on.unhealthy: true
+    healthcheck:
+      test: wget --output-document=/dev/null --tries=3 --timeout=3.0 https://example.com/notme.php
+      interval: 15s
+      timeout: 10s
+      retries: 1
+      start_period: 15s
+      start_interval: 15s
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    ports:
+      - 8080:8080
+    env_file:
+      - ./config/env/nordvpn.env
+    volumes:
+      - ./config/gluetun:/gluetun
+      - /lib/modules:/lib/modules:ro
+    environment:
+      - TZ=Etc/UTC
+
+  mullvad:
+    image: qmcgaw/gluetun
+    container_name: mullvad
+    labels:
+      deunhealth.restart.on.unhealthy: true
+    healthcheck:
+      test: wget --output-document=/dev/null --tries=3 --timeout=3.0 https://example.com/notme.php
+      interval: 15s
+      timeout: 10s
+      retries: 1
+      start_period: 15s
+      start_interval: 15s
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    # ports:
+    #   - 8080:8080
+    env_file:
+      - ./config/env/mullvad.env
+    volumes:
+      - ./config/gluetun:/gluetun
+      - /lib/modules:/lib/modules:ro
+    environment:
+      - TZ=Etc/UTC
+
+  airvpn:
+    image: qmcgaw/gluetun
+    container_name: arivpn
+    labels:
+      deunhealth.restart.on.unhealthy: true
+    healthcheck:
+      test: wget --output-document=/dev/null --tries=3 --timeout=3.0 https://example.com/notme.php
+      interval: 15s
+      timeout: 10s
+      retries: 1
+      start_period: 15s
+      start_interval: 15s
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    ports:
+      - <port:port>
+    env_file:
+      - ./config/env/airvpn.env
+    volumes:
+      - ./config/gluetun:/gluetun
+      - /lib/modules:/lib/modules:ro
+    environment:
+      - TZ=Etc/UTC
+      - UPDATER_PERIOD=1h
+      - UPDATER_VPN_SERVICE_PROVIDERS=airvpn,nordvpn,mullvad
+
+  using-vpn:
+    image: <image>
+    container_name: using-vpn
+    labels:
+      deunhealth.restart.on.unhealthy: true
+    network_mode: service:nordvpn-official-client
+    healthcheck:
+      test: curl --fail --max-time 3.0 --retry 3 --retry-all-errors https://example.com/notme.php || kill 1
+      interval: 15s
+      timeout: 10s
+      retries: 1
+      start_period: 15s
+      start_interval: 15s
+    depends_on:
+      nordvpn-official-client:
+        condition: service_healthy
+        restart: true
+    restart: unless-stopped
+
